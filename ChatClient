@@ -1,0 +1,178 @@
+import javax.swing.*;
+import java.awt.*;
+import java.io.IOException;
+import java.net.*;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+public class ChatClient extends JFrame {
+    private static final String MULTICAST_GROUP = "230.0.0.0";
+    private static final int PORT = 4446;
+    private static final Logger logger = Logger.getLogger(ChatClient.class.getName());
+
+    private final JTextArea chatArea;
+    private final JTextField chatInput;
+    private final JTextArea userArea;
+
+    private MulticastSocket socket = null;
+    private InetAddress group = null;
+    private NetworkInterface networkInterface = null;
+
+    private final Set<String> users;
+
+    public ChatClient(String userName) {
+        users = new HashSet<>();
+
+        // Setup GUI
+        setTitle("Group Chat");
+        setSize(600, 400);
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setLayout(new BorderLayout());
+
+        chatArea = new JTextArea();
+        chatArea.setEditable(false);
+        add(new JScrollPane(chatArea), BorderLayout.CENTER);
+
+        chatInput = new JTextField();
+        add(chatInput, BorderLayout.SOUTH);
+
+        userArea = new JTextArea();
+        userArea.setEditable(false);
+        add(new JScrollPane(userArea), BorderLayout.EAST);
+
+        JButton disconnectButton = new JButton("Koppla ner");
+        add(disconnectButton, BorderLayout.NORTH);
+
+        // Setup network
+        try {
+            socket = new MulticastSocket(PORT);
+            group = InetAddress.getByName(MULTICAST_GROUP);
+            networkInterface = NetworkInterface.getByInetAddress(InetAddress.getLocalHost());
+            socket.joinGroup(new InetSocketAddress(group, PORT), networkInterface);
+
+            // Start a thread to receive messages
+            new Thread(this::receiveMessages).start();
+
+            // Send join message
+            sendMessage("JOIN", userName);
+        } catch (IOException e) {
+            logger.log(Level.SEVERE, "Network error: " + e.getMessage(), e);
+            JOptionPane.showMessageDialog(this, "Network error: " + e.getMessage());
+            System.exit(1);
+        }
+
+        // Event listeners
+        chatInput.addActionListener(_ -> {
+            String message = chatInput.getText().trim();
+            if (!message.isEmpty()) {
+                sendMessage("CHAT", userName + ": " + message);
+                chatInput.setText("");
+            }
+        });
+
+        disconnectButton.addActionListener(_ -> {
+            sendMessage("LEAVE", userName);
+            disconnect();
+        });
+
+        addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosing(java.awt.event.WindowEvent windowEvent) {
+                sendMessage("LEAVE", userName);
+                disconnect();
+            }
+        });
+
+        setVisible(true);
+    }
+
+    private void sendMessage(String type, String message) {
+        String fullMessage = type + ":" + message;
+        byte[] buffer = fullMessage.getBytes();
+        DatagramPacket packet = new DatagramPacket(buffer, buffer.length, group, PORT);
+        try {
+            if (socket != null) {
+                socket.send(packet);
+                logger.log(Level.INFO, "Sent message: " + fullMessage);
+            }
+        } catch (IOException e) {
+            logger.log(Level.SEVERE, "Failed to send message: " + e.getMessage(), e);
+            JOptionPane.showMessageDialog(this, "Failed to send message: " + e.getMessage());
+        }
+    }
+
+    private void receiveMessages() {
+        byte[] buffer = new byte[256];
+        while (true) {
+            try {
+                DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+                if (socket != null) {
+                    socket.receive(packet);
+                    String received = new String(packet.getData(), 0, packet.getLength());
+                    logger.log(Level.INFO, "Received message: " + received);
+                    handleReceivedMessage(received);
+                }
+            } catch (IOException e) {
+                logger.log(Level.SEVERE, "Failed to receive message: " + e.getMessage(), e);
+                JOptionPane.showMessageDialog(this, "Failed to receive message: " + e.getMessage());
+                break;
+            }
+        }
+    }
+
+    private void handleReceivedMessage(String message) {
+        String[] parts = message.split(":", 2);
+        if (parts.length >= 2) {
+            String type = parts[0];
+            String content = parts[1];
+
+            switch (type) {
+                case "JOIN":
+                    if (users.add(content)) {
+                        updateUsers();
+                        chatArea.append(content + " has joined the chat.\n");
+                    }
+                    break;
+                case "LEAVE":
+                    if (users.remove(content)) {
+                        updateUsers();
+                        chatArea.append(content + " has left the chat.\n");
+                    }
+                    break;
+                case "CHAT":
+                    chatArea.append(content + "\n");
+                    break;
+            }
+        }
+    }
+
+    private void updateUsers() {
+        userArea.setText("");
+        for (String user : users) {
+            userArea.append(user + "\n");
+        }
+    }
+
+    private void disconnect() {
+        try {
+            if (socket != null && group != null && networkInterface != null) {
+                socket.leaveGroup(new InetSocketAddress(group, PORT), networkInterface);
+                socket.close();
+            }
+        } catch (IOException e) {
+            logger.log(Level.SEVERE, "Failed to disconnect: " + e.getMessage(), e);
+            JOptionPane.showMessageDialog(this, "Failed to disconnect: " + e.getMessage());
+        }
+        System.exit(0);
+    }
+
+    public static void main(String[] args) {
+        if (args.length != 1) {
+            System.out.println("Usage: java ChatClient <Saran>");
+            System.exit(1);
+        }
+        new ChatClient(args[0]);
+    }
+}
