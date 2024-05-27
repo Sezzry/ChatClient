@@ -9,24 +9,24 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class ChatClient extends JFrame {
-    private static final String MULTICAST_GROUP = "230.0.0.0";
-    private static final int PORT = 4446;
-    private static final Logger logger = Logger.getLogger(ChatClient.class.getName());
+    private static final String MULTICAST_GROUP = "230.0.0.0"; 
+    private static final int PORT = 4446; 
+    private static final Logger logger = Logger.getLogger(ChatClient.class.getName()); // Loggning
 
-    private final JTextArea chatArea;
+    private final JTextArea chatArea; 
     private final JTextField chatInput;
-    private final JTextArea userArea;
+    private final JTextArea userArea; 
 
-    private MulticastSocket socket = null;
-    private InetAddress group = null;
-    private NetworkInterface networkInterface = null;
+    private MulticastSocket socket = null; // Multicast-socket för att skicka och ta emot meddelanden
+    private InetAddress group = null; // InetAddress-objekt för multicast-gruppen
+    private NetworkInterface networkInterface = null; // Nätverksgränssnitt för multicast-gruppen
 
     private final Set<String> users;
 
     public ChatClient(String userName) {
         users = new HashSet<>();
 
-        // GUI Design
+        // Ställ in GUI
         setTitle("Group Chat");
         setSize(600, 400);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -46,7 +46,7 @@ public class ChatClient extends JFrame {
         JButton disconnectButton = new JButton("Disconnect");
         add(disconnectButton, BorderLayout.NORTH);
 
-        // Nätverkskoppling
+        // Ställ in nätverket
         try {
             socket = new MulticastSocket(PORT);
             group = InetAddress.getByName(MULTICAST_GROUP);
@@ -56,14 +56,16 @@ public class ChatClient extends JFrame {
             // Starta en tråd för att ta emot meddelanden
             new Thread(this::receiveMessages).start();
 
+            // Skicka meddelande om att användaren har anslutit
             sendMessage("JOIN", userName);
+            // Begär användarlistan
             sendMessage("REQUEST_USERS", userName);
         } catch (IOException e) {
             logger.log(Level.SEVERE, "Network error: " + e.getMessage(), e);
             JOptionPane.showMessageDialog(this, "Network error: " + e.getMessage());
             System.exit(1);
         }
-
+        
         chatInput.addActionListener(_ -> {
             String message = chatInput.getText().trim();
             if (!message.isEmpty()) {
@@ -97,7 +99,6 @@ public class ChatClient extends JFrame {
                 socket.send(packet);
                 logger.log(Level.INFO, "Sent message: " + fullMessage);
                 if (type.equals("JOIN")) {
-                    // Skicka uppdaterad lista till alla användare i chatten
                     sendMessage("USERS", String.join(",", users));
                 }
             }
@@ -134,14 +135,14 @@ public class ChatClient extends JFrame {
 
             switch (type) {
                 case "JOIN":
-                    if (users.add(content)) {
+                    if (users.add(content.trim())) {
                         updateUsers();
                         chatArea.append(content + " has joined the chat.\n");
                         sendMessage("USERS", String.join(",", users));
                     }
                     break;
                 case "LEAVE":
-                    if (users.remove(content)) {
+                    if (users.remove(content.trim())) {
                         updateUsers();
                         chatArea.append(content + " has left the chat.\n");
                         sendMessage("USERS", String.join(",", users));
@@ -152,6 +153,7 @@ public class ChatClient extends JFrame {
                     break;
                 case "USERS":
                     Set<String> newUsers = new HashSet<>(Arrays.asList(content.split(",")));
+                    newUsers.removeIf(String::isEmpty);
                     users.addAll(newUsers);
                     updateUsers();
                     break;
@@ -165,7 +167,7 @@ public class ChatClient extends JFrame {
     private void updateUsers() {
         userArea.setText("");
         for (String user : users) {
-            userArea.append(user + "\n");
+            userArea.append(user.trim() + "\n");
         }
     }
 
