@@ -2,6 +2,7 @@ import javax.swing.*;
 import java.awt.*;
 import java.io.IOException;
 import java.net.*;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.logging.Level;
@@ -42,7 +43,7 @@ public class ChatClient extends JFrame {
         userArea.setEditable(false);
         add(new JScrollPane(userArea), BorderLayout.EAST);
 
-        JButton disconnectButton = new JButton("Koppla ner");
+        JButton disconnectButton = new JButton("Disconnect");
         add(disconnectButton, BorderLayout.NORTH);
 
         // Setup network
@@ -57,6 +58,8 @@ public class ChatClient extends JFrame {
 
             // Send join message
             sendMessage("JOIN", userName);
+            // Request user list
+            sendMessage("REQUEST_USERS", userName);
         } catch (IOException e) {
             logger.log(Level.SEVERE, "Network error: " + e.getMessage(), e);
             JOptionPane.showMessageDialog(this, "Network error: " + e.getMessage());
@@ -96,6 +99,10 @@ public class ChatClient extends JFrame {
             if (socket != null) {
                 socket.send(packet);
                 logger.log(Level.INFO, "Sent message: " + fullMessage);
+                if (type.equals("JOIN")) {
+                    // Send the current user list to all users
+                    sendMessage("USERS", String.join(",", users));
+                }
             }
         } catch (IOException e) {
             logger.log(Level.SEVERE, "Failed to send message: " + e.getMessage(), e);
@@ -133,16 +140,29 @@ public class ChatClient extends JFrame {
                     if (users.add(content)) {
                         updateUsers();
                         chatArea.append(content + " has joined the chat.\n");
+                        // Send updated user list to all users
+                        sendMessage("USERS", String.join(",", users));
                     }
                     break;
                 case "LEAVE":
                     if (users.remove(content)) {
                         updateUsers();
                         chatArea.append(content + " has left the chat.\n");
+                        // Send updated user list to all users
+                        sendMessage("USERS", String.join(",", users));
                     }
                     break;
                 case "CHAT":
                     chatArea.append(content + "\n");
+                    break;
+                case "USERS":
+                    Set<String> newUsers = new HashSet<>(Arrays.asList(content.split(",")));
+                    users.addAll(newUsers);
+                    updateUsers();
+                    break;
+                case "REQUEST_USERS":
+                    // Send the current user list to the requesting user
+                    sendMessage("USERS", String.join(",", users));
                     break;
             }
         }
@@ -170,7 +190,7 @@ public class ChatClient extends JFrame {
 
     public static void main(String[] args) {
         if (args.length != 1) {
-            System.out.println("Usage: java ChatClient <Saran>");
+            System.out.println("Usage: java ChatClient <username>");
             System.exit(1);
         }
         new ChatClient(args[0]);
